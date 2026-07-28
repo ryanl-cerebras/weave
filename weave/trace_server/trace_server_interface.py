@@ -4,10 +4,12 @@ from enum import Enum
 from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol, TypeAlias, get_args
 
 from pydantic import (
+    AfterValidator,
     BaseModel,
     ConfigDict,
     Field,
     field_serializer,
+    field_validator,
     model_validator,
     with_config,
 )
@@ -2703,8 +2705,29 @@ class DatasetDeleteRes(BaseModel):
     num_deleted: int = Field(..., description="Number of dataset versions deleted")
 
 
+def _validate_custom_runtime_name(runtime_name: str) -> str:
+    if not runtime_name.strip():
+        raise ValueError("runtime_name must not be empty")
+    if "::" in runtime_name:
+        raise ValueError("runtime_name cannot contain '::'")
+    return runtime_name
+
+
+CustomRuntimeName: TypeAlias = Annotated[
+    str,
+    Field(max_length=MAX_OBJECT_NAME_LENGTH),
+    AfterValidator(_validate_custom_runtime_name),
+]
+
+
+def _validate_custom_runtime_id(runtime_id: str) -> str:
+    if not runtime_id.strip():
+        raise ValueError("runtime ID must not be empty")
+    return runtime_id
+
+
 class CustomRuntimeID(BaseModelStrict):
-    id: str = Field(
+    id: Annotated[str, AfterValidator(_validate_custom_runtime_id)] = Field(
         description="Value sent in the OpenAI-compatible request model field"
     )
     max_tokens: int = Field(
@@ -2728,35 +2751,23 @@ class CustomRuntimeApplyBody(BaseModelStrict):
         description="Complete desired list of IDs exposed by the endpoint"
     )
 
-
-class CustomRuntimeApplyReq(CustomRuntimeApplyBody):
-    project_id: str
-    runtime_name: str
-    wb_user_id: str | None = Field(None, description=WB_USER_ID_DESCRIPTION)
-
-    @model_validator(mode="after")
-    def validate_runtime_identity(self) -> "CustomRuntimeApplyReq":
-        if not self.runtime_name.strip():
-            raise ValueError("runtime_name must not be empty")
-        if len(self.runtime_name) > MAX_OBJECT_NAME_LENGTH:
-            raise ValueError(
-                f"runtime_name cannot exceed {MAX_OBJECT_NAME_LENGTH} characters"
-            )
-        if "::" in self.runtime_name:
-            raise ValueError("runtime_name cannot contain '::'")
-
+    @field_validator("runtime_ids")
+    @classmethod
+    def validate_unique_runtime_ids(
+        cls, runtime_ids: list[CustomRuntimeID]
+    ) -> list[CustomRuntimeID]:
         seen_ids: set[str] = set()
-        for runtime_id in self.runtime_ids:
-            if not runtime_id.id.strip():
-                raise ValueError("runtime ID must not be empty")
+        for runtime_id in runtime_ids:
             if runtime_id.id in seen_ids:
                 raise ValueError(f"duplicate runtime ID: {runtime_id.id}")
             seen_ids.add(runtime_id.id)
-            if len(f"{self.runtime_name}/{runtime_id.id}") > MAX_OBJECT_NAME_LENGTH:
-                raise ValueError(
-                    f"runtime name and ID cannot exceed {MAX_OBJECT_NAME_LENGTH} characters"
-                )
-        return self
+        return runtime_ids
+
+
+class CustomRuntimeApplyReq(CustomRuntimeApplyBody):
+    project_id: str
+    runtime_name: CustomRuntimeName
+    wb_user_id: str | None = Field(None, description=WB_USER_ID_DESCRIPTION)
 
 
 class CustomRuntimeIDRes(CustomRuntimeID):

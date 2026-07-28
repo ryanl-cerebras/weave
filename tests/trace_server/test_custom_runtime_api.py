@@ -297,10 +297,6 @@ def test_custom_runtime_apply_objects_work_with_existing_completion_lookup(
             "runtime_name": "runtime",
             "runtime_ids": [{"id": "duplicate"}, {"id": "duplicate"}],
         },
-        {
-            "runtime_name": "r" * 64,
-            "runtime_ids": [{"id": "i" * 64}],
-        },
     ],
 )
 def test_custom_runtime_apply_validates_names_before_writes(
@@ -311,6 +307,32 @@ def test_custom_runtime_apply_validates_names_before_writes(
             project_id=PROJECT_ID,
             base_url="https://agent.example.com/v1",
             **request_data,
+        )
+
+
+def test_custom_runtime_apply_validates_storage_name_length_before_writes(
+    trace_server,
+) -> None:
+    with pytest.raises(
+        InvalidRequest,
+        match="Runtime name and ID cannot exceed 128 characters",
+    ):
+        trace_server.custom_runtime_apply(
+            tsi.CustomRuntimeApplyReq(
+                project_id=PROJECT_ID,
+                runtime_name="r" * 64,
+                base_url="https://agent.example.com/v1",
+                runtime_ids=[{"id": "i" * 64}],
+            )
+        )
+
+    with pytest.raises(NotFoundError):
+        trace_server.obj_read(
+            tsi.ObjReadReq(
+                project_id=PROJECT_ID,
+                object_id="r" * 64,
+                digest="latest",
+            )
         )
 
 

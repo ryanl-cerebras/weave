@@ -1,6 +1,7 @@
 from collections.abc import Callable
 
 from weave.trace_server import trace_server_interface as tsi
+from weave.trace_server.constants import MAX_OBJECT_NAME_LENGTH
 from weave.trace_server.errors import InvalidRequest
 from weave.trace_server.interface.builtin_object_classes.provider import (
     Provider,
@@ -16,6 +17,7 @@ def apply_custom_runtime(
     obj_delete: Callable[[tsi.ObjDeleteReq], tsi.ObjDeleteRes],
 ) -> tsi.CustomRuntimeApplyRes:
     """Apply a runtime's complete desired state using existing object storage."""
+    _validate_storage_name_lengths(req)
     provider_object_id = sanitize_name_for_object_id(req.runtime_name)
     desired_model_ids = _build_desired_model_ids(provider_object_id, req.runtime_ids)
     provider_digests, existing_model_object_ids = _load_current_runtime_state(
@@ -68,6 +70,14 @@ def apply_custom_runtime(
         headers=req.headers,
         runtime_ids=result_ids,
     )
+
+
+def _validate_storage_name_lengths(req: tsi.CustomRuntimeApplyReq) -> None:
+    for runtime_id in req.runtime_ids:
+        if len(f"{req.runtime_name}/{runtime_id.id}") > MAX_OBJECT_NAME_LENGTH:
+            raise InvalidRequest(
+                f"Runtime name and ID cannot exceed {MAX_OBJECT_NAME_LENGTH} characters"
+            )
 
 
 def _build_desired_model_ids(
